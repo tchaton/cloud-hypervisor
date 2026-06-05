@@ -198,10 +198,11 @@ pub struct MemoryZone {
     hugepages: bool,
     backing_page_size: u64,
     mergeable: bool,
+    reserve: bool,
 }
 
 impl MemoryZone {
-    fn new(shared: bool, hugepages: bool, backing_page_size: u64, mergeable: bool) -> Self {
+    fn new(shared: bool, hugepages: bool, backing_page_size: u64, mergeable: bool, reserve: bool) -> Self {
         Self {
             regions: Vec::new(),
             virtio_mem_zone: None,
@@ -209,6 +210,7 @@ impl MemoryZone {
             hugepages,
             backing_page_size,
             mergeable,
+            reserve,
         }
     }
 
@@ -279,6 +281,7 @@ pub struct MemoryManager {
     hugepage_size: Option<u64>,
     prefault: bool,
     thp: bool,
+    reserve: bool,
     user_provided_zones: bool,
     snapshot_memory_ranges: MemoryRangeTable,
     memory_zones: MemoryZones,
@@ -661,6 +664,7 @@ impl MemoryManager {
         zones: &[MemoryZoneConfig],
         prefault: Option<bool>,
         thp: bool,
+        reserve: bool,
     ) -> Result<(Vec<Arc<GuestRegionMmap>>, MemoryZones), Error> {
         let mut zone_iter = zones.iter();
         let mut mem_regions = Vec::new();
@@ -676,7 +680,7 @@ impl MemoryManager {
         // Add zone id to the list of memory zones.
         memory_zones.insert(
             zone.id.clone(),
-            MemoryZone::new(zone.shared, zone.hugepages, zone_align_size, zone.mergeable),
+            MemoryZone::new(zone.shared, zone.hugepages, zone_align_size, zone.mergeable, zone.reserve),
         );
 
         for ram_region in ram_regions.iter() {
@@ -733,6 +737,7 @@ impl MemoryManager {
                     zone.host_numa_node,
                     None,
                     thp,
+                    reserve,
                 )?;
 
                 // Add region to the list of regions associated with the
@@ -775,6 +780,7 @@ impl MemoryManager {
                             zone.hugepages,
                             zone_align_size,
                             zone.mergeable,
+                            zone.reserve,
                         ),
                     );
                 }
@@ -812,6 +818,7 @@ impl MemoryManager {
                     zone_config.hugepages,
                     zone_page_size,
                     zone_config.mergeable,
+                    zone_config.reserve,
                 ),
             );
         }
@@ -1529,6 +1536,7 @@ impl MemoryManager {
                 hotplugged_size: config.hotplugged_size,
                 prefault: config.prefault,
                 mergeable: config.mergeable,
+                reserve: config.reserve,
             }];
 
             Ok((config.size, zones, allow_mem_hotplug))
@@ -1721,7 +1729,7 @@ impl MemoryManager {
                 .collect();
 
             let (mem_regions, mut memory_zones) =
-                Self::create_memory_regions_from_zones(&ram_regions, &zones, prefault, config.thp)?;
+                Self::create_memory_regions_from_zones(&ram_regions, &zones, prefault, config.thp, config.reserve)?;
 
             let mut guest_memory = GuestMemoryMmap::from_arc_regions(mem_regions)
                 .map_err(Error::GuestRegionCollection)?;
@@ -1768,6 +1776,7 @@ impl MemoryManager {
                                 zone.host_numa_node,
                                 None,
                                 config.thp,
+                                config.reserve,
                             )?;
 
                             guest_memory = guest_memory
@@ -1888,6 +1897,7 @@ impl MemoryManager {
             #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
             uefi_flash: None,
             thp: config.thp,
+            reserve:config.reserve,
         };
 
         Ok(Arc::new(Mutex::new(memory_manager)))
@@ -2048,8 +2058,14 @@ impl MemoryManager {
         host_numa_node: Option<u32>,
         existing_memory_file: Option<File>,
         thp: bool,
+        reserve: bool,
     ) -> Result<MmapRegion<AtomicBitmap>, Error> {
-        let mut mmap_flags = libc::MAP_NORESERVE;
+        // Only reserve commit/swap space when explicitly requested.
+        let mut mmap_flags = if reserve {
+            0
+        } else {
+            libc::MAP_NORESERVE
+        };
 
         // The duplication of mmap_flags ORing here is unfortunate but it also makes
         // the complexity of the handling clear.
@@ -2185,6 +2201,7 @@ impl MemoryManager {
         host_numa_node: Option<u32>,
         existing_memory_file: Option<File>,
         thp: bool,
+        reserve: bool,
     ) -> Result<Arc<GuestRegionMmap>, Error> {
         let r = Self::create_ram_region_raw(
             backing_file,
@@ -2197,6 +2214,7 @@ impl MemoryManager {
             host_numa_node,
             existing_memory_file,
             thp,
+            reserve,
         )?;
 
         Ok(Arc::new(GuestRegionMmap::new(r, start_addr).ok_or(
@@ -2312,6 +2330,7 @@ impl MemoryManager {
             None,
             None,
             self.thp,
+            self.reserve,
         )?;
 
         // Map it into the guest

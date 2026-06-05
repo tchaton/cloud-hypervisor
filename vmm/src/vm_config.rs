@@ -246,6 +246,8 @@ pub struct MemoryZoneConfig {
     pub prefault: bool,
     #[serde(default)]
     pub mergeable: bool,
+    #[serde(default)]
+    pub reserve: bool,
 }
 
 impl ApplyLandlock for MemoryZoneConfig {
@@ -296,6 +298,8 @@ pub struct MemoryConfig {
     pub zones: Option<Vec<MemoryZoneConfig>>,
     #[serde(default = "default_memoryconfig_thp")]
     pub thp: bool,
+    #[serde(default)]
+    pub reserve: bool,
 }
 
 pub const DEFAULT_MEMORY_MB: u64 = 512;

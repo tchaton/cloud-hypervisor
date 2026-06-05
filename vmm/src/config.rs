@@ -1060,7 +1060,8 @@ impl MemoryConfig {
             .add("hugepages")
             .add("hugepage_size")
             .add("prefault")
-            .add("thp");
+            .add("thp")
+            .add("reserve");
         parser.parse(memory).map_err(Error::ParseMemory)?;
 
         let size = parser
@@ -1109,6 +1110,11 @@ impl MemoryConfig {
             .map_err(Error::ParseMemory)?
             .unwrap_or(Toggle(true))
             .0;
+        let reserve = parser
+            .convert::<Toggle>("reserve")
+            .map_err(Error::ParseMemory)?
+            .unwrap_or(Toggle(true))
+            .0;
 
         let zones: Option<Vec<MemoryZoneConfig>> = if let Some(memory_zones) = &memory_zones {
             let mut zones = Vec::new();
@@ -1125,7 +1131,8 @@ impl MemoryConfig {
                     .add("hotplug_size")
                     .add("hotplugged_size")
                     .add("prefault")
-                    .add("mergeable");
+                    .add("mergeable")
+                    .add("reserve");
                 parser.parse(memory_zone).map_err(Error::ParseMemoryZone)?;
 
                 let id = parser.get("id").ok_or(Error::ParseMemoryZoneIdMissing)?;
@@ -1171,6 +1178,11 @@ impl MemoryConfig {
                     .map_err(Error::ParseMemoryZone)?
                     .unwrap_or(Toggle(mergeable))
                     .0;
+                let reserve: bool = parser
+                    .convert::<Toggle>("reserve")
+                    .map_err(Error::ParseMemoryZone)?
+                    .unwrap_or(Toggle(reserve))
+                    .0;
 
                 zones.push(MemoryZoneConfig {
                     id,
@@ -1184,6 +1196,7 @@ impl MemoryConfig {
                     hotplugged_size,
                     prefault,
                     mergeable,
+                    reserve,
                 });
             }
             Some(zones)
@@ -1203,6 +1216,7 @@ impl MemoryConfig {
             prefault,
             zones,
             thp,
+            reserve,
         })
     }
 
@@ -5229,6 +5243,7 @@ id=\"{id}\",pci_segment={pci_segment},queue_sizes={queue_sizes}"
                 prefault: false,
                 zones: None,
                 thp: true,
+                reserve: false,
             },
             payload: Some(PayloadConfig {
                 kernel: Some(PathBuf::from("/path/to/kernel")),
